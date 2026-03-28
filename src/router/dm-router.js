@@ -51,7 +51,7 @@ async function handle({ message, say, app }) {
     try {
       const info = await app.client.users.info({ user: userId });
       displayName = info.user.real_name || info.user.name || 'Unknown';
-    } catch {}
+    } catch (err) { console.error('[DM] users.info failed:', err.message); }
 
     const { user, isNew } = userRegistry.ensureUser(userId, displayName);
 
@@ -180,7 +180,7 @@ async function handle({ message, say, app }) {
     console.error('Handler error:', err.message);
     try {
       await say(`Sorry, something went wrong: ${err.message}`);
-    } catch {}
+    } catch (err) { console.error('[DM] say() error fallback failed:', err.message); }
   }
 }
 

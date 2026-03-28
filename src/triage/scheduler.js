@@ -86,7 +86,7 @@ async function fetchNewMessages(botClient, channelId, sampleUserId) {
   }
 
   // Auto-join channel if not already a member
-  try { await botClient.conversations.join({ channel: channelId }); } catch {}
+  try { await botClient.conversations.join({ channel: channelId }); } catch { /* expected: already a member or insufficient perms */ }
 
   const history = await botClient.conversations.history({
     channel: channelId, oldest, limit: 100,
@@ -170,7 +170,7 @@ async function triageForUser(botClient, userClient, userId, userToken, channelId
     try {
       const client = new (require('@slack/web-api').WebClient)(userToken);
       await client.conversations.mark({ channel: channelId, ts: latestNoiseTts });
-    } catch {}
+    } catch (err) { console.error('[Scheduler] conversations.mark failed:', err.message); }
   }
 
   if (totalNoise > 0 || totalAttention > 0) {

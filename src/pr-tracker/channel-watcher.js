@@ -164,7 +164,7 @@ async function scanChannel(botClient, channelId, isInitial = false) {
         if (added) {
           try {
             await notion.createPrReview(prData);
-          } catch {}
+          } catch (err) { console.error('[PR Watch] notion.createPrReview failed:', err.message); }
           console.log(`[PR Watch] Tracked: ${prUrl} (by ${result.author})`);
         }
       }

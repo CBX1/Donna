@@ -45,7 +45,7 @@ function loadDirectory() {
     if (fs.existsSync(DIRECTORY_FILE)) {
       return JSON.parse(fs.readFileSync(DIRECTORY_FILE, 'utf8'));
     }
-  } catch {}
+  } catch (err) { console.error('[EmailDirectory] loadDirectory failed:', err.message); }
   return {};
 }
 

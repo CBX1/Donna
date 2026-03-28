@@ -134,7 +134,7 @@ async function ensureColumns(databaseId) {
         },
       }),
     });
-  } catch {}
+  } catch { /* expected: ensureColumns is best-effort, column may already exist */ }
 }
 
 module.exports = { createTask, createPrReview, queryTasks, updateTaskStatus, markPrDoneByUrl, ensureColumns };

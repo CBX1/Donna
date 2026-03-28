@@ -14,7 +14,7 @@ async function handle(userId, slackClient) {
     try {
       const info = await slackClient.users.info({ user: userId });
       displayName = info.user.real_name || info.user.name || 'there';
-    } catch {}
+    } catch (err) { console.error('[Onboarding] users.info failed:', err.message); }
     userRegistry.ensureUser(userId, displayName);
   }
 

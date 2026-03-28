@@ -67,7 +67,7 @@ function readSourceFiles() {
       if (fs.existsSync(fullPath)) {
         files[relPath] = fs.readFileSync(fullPath, 'utf8');
       }
-    } catch {}
+    } catch (err) { console.error('[Evolve] readSourceFiles failed:', err.message); }
   }
   return files;
 }

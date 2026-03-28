@@ -24,7 +24,7 @@ async function handle(params, slackClient) {
     }
 
     // Join channel if not already a member
-    try { await slackClient.conversations.join({ channel: resolved.id }); } catch {}
+    try { await slackClient.conversations.join({ channel: resolved.id }); } catch { /* expected: already a member or insufficient perms */ }
 
     const history = await slackClient.conversations.history({
       channel: resolved.id, oldest: String(oldest), limit: 100,
