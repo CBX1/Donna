@@ -40,6 +40,7 @@ function start(port) {
 }
 
 function getStatus() {
+  const metrics = require('./metrics');
   return {
     ok: state.ok,
     uptime: Math.floor(process.uptime()),
@@ -47,6 +48,7 @@ function getStatus() {
     lastTriageSweep: state.lastTriageSweep,
     lastMessageHandled: state.lastMessageHandled,
     integrations: state.integrations,
+    metrics: metrics.getSnapshot(),
     memory: {
       rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB',
       heap: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',

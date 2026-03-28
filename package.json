@@ -5,6 +5,10 @@
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
+    "start:pm2": "pm2 start ecosystem.config.js",
+    "stop": "pm2 stop donna",
+    "restart": "pm2 restart donna",
+    "logs": "pm2 logs donna --lines 50",
     "dev": "node --watch src/app.js",
     "test": "vitest run"
   },

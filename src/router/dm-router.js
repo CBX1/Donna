@@ -5,6 +5,7 @@ const conversationStore = require('../stores/conversation-store');
 const prDetector = require('../pr-tracker/tracker');
 const conversationEngine = require('../conversation/engine');
 const health = require('../core/health');
+const metrics = require('../core/metrics');
 
 /**
  * Handle a DM message. Called from app.js.
@@ -42,6 +43,7 @@ async function handle({ message, say, app }) {
     }
 
     health.recordMessage();
+    metrics.increment('messagesHandled');
 
     // Silent PR detection from DMs
     log.info({ text: text.substring(0, 200) }, 'Raw text');

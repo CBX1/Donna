@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const config = require('../config');
+const metrics = require('../core/metrics');
 
 let client = null;
 
@@ -11,22 +12,38 @@ function getClient() {
 }
 
 async function ask(systemPrompt, userMessage) {
-  const model = getClient().getGenerativeModel({
-    model: 'gemini-2.0-flash',
-    systemInstruction: systemPrompt,
-  });
-  const result = await model.generateContent(userMessage);
-  return result.response.text();
+  const start = Date.now();
+  metrics.increment('geminiCalls');
+  try {
+    const model = getClient().getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      systemInstruction: systemPrompt,
+    });
+    const result = await model.generateContent(userMessage);
+    metrics.recordGeminiLatency(Date.now() - start);
+    return result.response.text();
+  } catch (err) {
+    metrics.increment('geminiErrors');
+    throw err;
+  }
 }
 
 async function askJson(systemPrompt, userMessage) {
-  const model = getClient().getGenerativeModel({
-    model: 'gemini-2.0-flash',
-    systemInstruction: systemPrompt,
-    generationConfig: { responseMimeType: 'application/json' },
-  });
-  const result = await model.generateContent(userMessage);
-  return JSON.parse(result.response.text());
+  const start = Date.now();
+  metrics.increment('geminiCalls');
+  try {
+    const model = getClient().getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      systemInstruction: systemPrompt,
+      generationConfig: { responseMimeType: 'application/json' },
+    });
+    const result = await model.generateContent(userMessage);
+    metrics.recordGeminiLatency(Date.now() - start);
+    return JSON.parse(result.response.text());
+  } catch (err) {
+    metrics.increment('geminiErrors');
+    throw err;
+  }
 }
 
 async function chat(systemPrompt, history, userMessage) {
@@ -44,6 +61,8 @@ async function chat(systemPrompt, history, userMessage) {
  * Returns { text, functionCalls } where functionCalls is an array of { name, args }.
  */
 async function chatWithTools(systemPrompt, history, userMessage, functionDeclarations) {
+  const start = Date.now();
+  metrics.increment('geminiCalls');
   const model = getClient().getGenerativeModel({
     model: 'gemini-2.0-flash',
     systemInstruction: systemPrompt,
@@ -69,6 +88,7 @@ async function chatWithTools(systemPrompt, history, userMessage, functionDeclara
     }
   }
 
+  metrics.recordGeminiLatency(Date.now() - start);
   return { text, functionCalls, chatSession };
 }
 

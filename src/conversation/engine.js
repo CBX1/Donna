@@ -8,6 +8,7 @@ const userStore = require('../stores/user-store');
 const userRegistry = require('../core/user-registry');
 const permissions = require('../core/permissions');
 const { getGeminiFunctionDeclarations, getTool } = require('../skills/tools');
+const metrics = require('../core/metrics');
 
 const MAX_TOOL_ROUNDS = 3; // prevent infinite tool loops
 
@@ -98,6 +99,7 @@ async function converse(userId, userMessage, ctx) {
 
       try {
         log.info({ tool: call.name, args: call.args }, 'tool call');
+        metrics.increment('toolCalls');
         const handlerResult = await tool.handler(userId, call.args, ctx);
         toolResults.push({ name: call.name, result: handlerResult || 'Done.' });
       } catch (err) {

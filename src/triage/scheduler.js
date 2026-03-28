@@ -177,6 +177,9 @@ async function triageForUser(botClient, userClient, userId, userToken, channelId
   }
 
   if (totalNoise > 0 || totalAttention > 0) {
+    const metrics = require('../core/metrics');
+    metrics.increment('triageNoise', totalNoise);
+    metrics.increment('triageAttention', totalAttention);
     log.info({ channelName, userId: userId.substring(0, 6), totalNoise, totalAttention }, 'channel triaged');
   }
 }
