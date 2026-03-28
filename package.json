@@ -1,0 +1,20 @@
+{
+  "name": "donna-slack-bot",
+  "version": "1.0.0",
+  "description": "Donna - AI-powered Slack assistant for notification triage, PR tracking, tasks, and reminders",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/generative-ai": "^0.24.1",
+    "@notionhq/client": "^5.15.0",
+    "@slack/bolt": "^4.1.0",
+    "better-sqlite3": "^12.8.0",
+    "dotenv": "^16.4.7",
+    "googleapis": "^171.4.0",
+    "node-cron": "^3.0.3"
+  }
+}

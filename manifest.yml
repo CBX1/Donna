@@ -1,0 +1,51 @@
+display_information:
+  name: Donna
+  description: AI-powered Slack assistant that triages notifications, tracks PRs, manages tasks, and handles reminders.
+  background_color: "#4A154B"
+
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Donna
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      # Core messaging
+      - chat:write                # Post messages (DM replies, summaries, reminders)
+      - im:history                # Read DM messages (PR detection, intent routing)
+      - im:read                   # View DM metadata
+      - im:write                  # Open DMs (send reminders, daily summary)
+      # Channel access
+      - channels:history          # Read channel messages (triage, summaries)
+      - channels:join             # Auto-join public channels for triage/summaries
+      - channels:read             # List/resolve channel names
+      - groups:history            # Read private channel messages (triage)
+      - groups:read               # List private channels
+      # Mentions & context
+      - app_mentions:read         # Respond to @Donna mentions
+      - users:read                # Resolve user names/IDs
+      - links:read                # Detect PR links in messages
+      # Reactions
+      - reactions:read            # Read reactions for triage context
+      - reactions:write           # Acknowledge messages with emoji
+    user:
+      - channels:history          # Read channel history as user (for conversations.mark)
+      - channels:write            # Mark messages as read (conversations.mark)
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention               # @Donna in channels
+      - message.im                # DM handler (intent routing, PR detection)
+      - message.channels          # Channel triage
+      - message.groups            # Private channel triage
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
