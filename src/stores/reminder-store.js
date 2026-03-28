@@ -1,4 +1,5 @@
 const db = require('../db');
+const log = require('../utils/logger').child({ module: 'reminders' });
 
 const insertStmt = db.prepare(
   'INSERT INTO reminders (text, trigger_at, user_id, status) VALUES (?, ?, ?, ?)'
@@ -49,7 +50,7 @@ function restorePending(onTrigger) {
     }
   }
   if (restored > 0 || triggered > 0) {
-    console.log(`⏰ Reminders: ${restored} restored, ${triggered} triggered (past due)`);
+    log.info({ restored, triggered }, 'Reminders restored');
   }
 }
 

@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const log = require('../utils/logger').child({ module: 'triage' });
 const classifier = require('./classifier');
 const triageLogStore = require('../stores/triage-log-store');
 const triageRulesStore = require('../stores/triage-rules-store');
@@ -21,7 +22,7 @@ let _sendDm = null;
 function start(botClient, userClient, options = {}) {
   _sendDm = options.sendDm;
 
-  console.log('🔍 Triage scheduler started (every 5 min, multi-user)');
+  log.info('Triage scheduler started (every 5 min, multi-user)');
 
   cron.schedule('*/5 * * * *', async () => {
     await sweep(botClient, userClient);
@@ -67,7 +68,7 @@ async function sweep(botClient, userClient) {
       // Small delay to avoid rate limits
       await new Promise(r => setTimeout(r, 500));
     } catch (err) {
-      console.error(`[Triage] Error on ${channelId}:`, err.message);
+      log.error({ err, channelId }, 'Error processing channel');
     }
   }
 }
@@ -170,11 +171,11 @@ async function triageForUser(botClient, userClient, userId, userToken, channelId
     try {
       const client = new (require('@slack/web-api').WebClient)(userToken);
       await client.conversations.mark({ channel: channelId, ts: latestNoiseTts });
-    } catch (err) { console.error('[Scheduler] conversations.mark failed:', err.message); }
+    } catch (err) { log.error({ err }, 'conversations.mark failed'); }
   }
 
   if (totalNoise > 0 || totalAttention > 0) {
-    console.log(`[Triage] #${channelName} (${userId.substring(0, 6)}): ${totalNoise} noise, ${totalAttention} attention`);
+    log.info({ channelName, userId: userId.substring(0, 6), totalNoise, totalAttention }, 'channel triaged');
   }
 }
 
@@ -191,7 +192,7 @@ async function checkMentions(channelId, channelName, messages) {
       if (watcher.patterns.some(p => lower.includes(p.toLowerCase()))) {
         const preview = text.substring(0, 150);
         _sendDm(watcher.user_id, `*You were mentioned in #${channelName}:*\n> ${preview}`)
-          .catch(err => console.error('[Mention Watch] DM failed:', err.message));
+          .catch(err => log.error({ err }, 'Mention watch DM failed'));
       }
     }
   }

@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
+const log = require('./utils/logger').child({ module: 'db' });
 
 const DB_PATH = path.resolve(__dirname, '..', 'donna.db');
 const MIGRATIONS_DIR = path.resolve(__dirname, '..', 'migrations');
@@ -41,7 +42,7 @@ for (const file of files) {
   const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
   db.exec(sql);
   db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(file);
-  console.log(`📦 Migration applied: ${file}`);
+  log.info({ file }, 'Migration applied');
 }
 
 module.exports = db;

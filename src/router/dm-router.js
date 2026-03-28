@@ -1,4 +1,5 @@
 const config = require('../config');
+const log = require('../utils/logger').child({ module: 'dm' });
 const userRegistry = require('../core/user-registry');
 const conversationStore = require('../stores/conversation-store');
 const prDetector = require('../pr-tracker/tracker');
@@ -26,7 +27,7 @@ async function handle({ message, say, app }) {
     try {
       const info = await app.client.users.info({ user: userId });
       displayName = info.user.real_name || info.user.name || 'Unknown';
-    } catch (err) { console.error('[DM] users.info failed:', err.message); }
+    } catch (err) { log.error({ err }, 'users.info failed'); }
 
     const { user, isNew } = userRegistry.ensureUser(userId, displayName);
 
@@ -40,7 +41,7 @@ async function handle({ message, say, app }) {
     }
 
     // Silent PR detection from DMs
-    console.log(`[DM] Raw text: ${text.substring(0, 200)}`);
+    log.info({ text: text.substring(0, 200) }, 'Raw text');
     await prDetector.detectFromDm(text, userId, displayName);
 
     // Context for tool handlers
@@ -62,10 +63,10 @@ async function handle({ message, say, app }) {
 
     if (response) await say(response);
   } catch (err) {
-    console.error('Handler error:', err.message);
+    log.error({ err }, 'Handler error');
     try {
       await say(`Sorry, something went wrong: ${err.message}`);
-    } catch (sayErr) { console.error('[DM] say() error fallback failed:', sayErr.message); }
+    } catch (sayErr) { log.error({ err: sayErr }, 'say() error fallback failed'); }
   }
 }
 

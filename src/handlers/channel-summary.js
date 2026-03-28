@@ -1,4 +1,5 @@
 const gemini = require('../integrations/gemini');
+const log = require('../utils/logger').child({ module: 'channel-summary' });
 const { resolveChannel } = require('../utils/slack-format');
 
 const SUMMARY_PROMPT = `You are Donna, a Slack assistant. Summarize the following Slack channel messages concisely.
@@ -41,7 +42,7 @@ async function handle(params, slackClient) {
 
     return `*Summary of #${resolved.name}* (${timeframe || 'today'}):\n\n${summary}`;
   } catch (err) {
-    console.error('Channel summary failed:', err.message);
+    log.error({ err }, 'Channel summary failed');
     return `Failed to summarize: ${err.message}`;
   }
 }

@@ -1,5 +1,6 @@
 const { google } = require('googleapis');
 const config = require('../config');
+const log = require('../utils/logger').child({ module: 'calendar' });
 const userStore = require('../stores/user-store');
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar'];
@@ -48,7 +49,7 @@ async function exchangeCode(userId, code) {
   });
 
   delete pendingAuth[userId];
-  console.log(`[Calendar] Google auth complete for ${userId}`);
+  log.info({ userId }, 'Google auth complete');
   return true;
 }
 
@@ -92,7 +93,7 @@ async function getAuthClient(userId) {
         });
         oauth2Client.setCredentials(credentials);
       } catch (err) {
-        console.error('[Calendar] Token refresh failed:', err.message);
+        log.error({ err }, 'Token refresh failed');
         return null;
       }
     } else {

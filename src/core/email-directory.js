@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const log = require('../utils/logger').child({ module: 'email-directory' });
 
 const DIRECTORY_FILE = path.resolve(__dirname, '../../email-directory.json');
 
@@ -33,7 +34,7 @@ async function buildDirectory(slackClient) {
   } while (cursor);
 
   fs.writeFileSync(DIRECTORY_FILE, JSON.stringify(directory, null, 2));
-  console.log(`📧 Email directory built: ${Object.keys(directory).length} users`);
+  log.info({ count: Object.keys(directory).length }, 'Email directory built');
   return directory;
 }
 
@@ -45,7 +46,7 @@ function loadDirectory() {
     if (fs.existsSync(DIRECTORY_FILE)) {
       return JSON.parse(fs.readFileSync(DIRECTORY_FILE, 'utf8'));
     }
-  } catch (err) { console.error('[EmailDirectory] loadDirectory failed:', err.message); }
+  } catch (err) { log.error({ err }, 'loadDirectory failed'); }
   return {};
 }
 

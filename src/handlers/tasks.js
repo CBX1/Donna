@@ -1,4 +1,5 @@
 const notion = require('../integrations/notion');
+const log = require('../utils/logger').child({ module: 'tasks' });
 const userStore = require('../stores/user-store');
 const { formatAge } = require('../utils/time');
 
@@ -26,7 +27,7 @@ async function handleCreate(userId, params) {
     await notion.createTask(user.notion_database_id, params.title);
     return pick(CREATE_REPLIES)(params.title);
   } catch (err) {
-    console.error('Task creation failed:', err.message);
+    log.error({ err }, 'Task creation failed');
     return `Couldn't create that task. Notion says: ${err.message}`;
   }
 }
@@ -56,7 +57,7 @@ async function handleQuery(userId, params) {
       : `*${status === 'all' ? 'All' : 'Completed'} tasks (${tasks.length}):*`;
     return `${header}\n${lines.join('\n')}`;
   } catch (err) {
-    console.error('Task query failed:', err.message);
+    log.error({ err }, 'Task query failed');
     return `Couldn't fetch your tasks: ${err.message}`;
   }
 }

@@ -1,4 +1,5 @@
 const config = require('../config');
+const log = require('../utils/logger').child({ module: 'github' });
 
 const BASE_URL = 'https://api.github.com';
 
@@ -45,7 +46,7 @@ async function getPrDetails(prUrl) {
       requestedReviewers: pr.requested_reviewers?.map(r => r.login) || [],
     };
   } catch (err) {
-    console.error(`[GitHub] Error fetching ${prUrl}:`, err.message);
+    log.error({ err, prUrl }, 'Error fetching PR');
     return null;
   }
 }
@@ -71,7 +72,7 @@ async function getReviewRequests(username) {
       createdAt: item.created_at,
     }));
   } catch (err) {
-    console.error('[GitHub] Error fetching review requests:', err.message);
+    log.error({ err }, 'Error fetching review requests');
     return [];
   }
 }

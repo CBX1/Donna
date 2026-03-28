@@ -1,4 +1,5 @@
 const config = require('../config');
+const log = require('../utils/logger').child({ module: 'notion' });
 
 const BASE_URL = 'https://api.notion.com/v1';
 const HEADERS = {
@@ -116,7 +117,7 @@ async function markPrDoneByUrl(databaseId, prUrl) {
     });
     return parsePage(data.results[0]);
   } catch (err) {
-    console.error('[Notion] Failed to mark PR done:', err.message);
+    log.error({ err }, 'Failed to mark PR done');
     return null;
   }
 }

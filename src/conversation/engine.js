@@ -1,4 +1,5 @@
 const gemini = require('../integrations/gemini');
+const log = require('../utils/logger').child({ module: 'conversation' });
 const conversationStore = require('../stores/conversation-store');
 const triageLogStore = require('../stores/triage-log-store');
 const triageRulesStore = require('../stores/triage-rules-store');
@@ -96,11 +97,11 @@ async function converse(userId, userMessage, ctx) {
       }
 
       try {
-        console.log(`[Tool] ${call.name}(${JSON.stringify(call.args)})`);
+        log.info({ tool: call.name, args: call.args }, 'tool call');
         const handlerResult = await tool.handler(userId, call.args, ctx);
         toolResults.push({ name: call.name, result: handlerResult || 'Done.' });
       } catch (err) {
-        console.error(`[Tool] ${call.name} failed:`, err.message);
+        log.error({ err, tool: call.name }, 'tool call failed');
         toolResults.push({ name: call.name, result: `Error: ${err.message}` });
       }
     }

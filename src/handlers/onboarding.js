@@ -1,4 +1,5 @@
 const userStore = require('../stores/user-store');
+const log = require('../utils/logger').child({ module: 'onboarding' });
 const userRegistry = require('../core/user-registry');
 
 async function handle(userId, slackClient) {
@@ -14,7 +15,7 @@ async function handle(userId, slackClient) {
     try {
       const info = await slackClient.users.info({ user: userId });
       displayName = info.user.real_name || info.user.name || 'there';
-    } catch (err) { console.error('[Onboarding] users.info failed:', err.message); }
+    } catch (err) { log.error({ err }, 'users.info failed'); }
     userRegistry.ensureUser(userId, displayName);
   }
 

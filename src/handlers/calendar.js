@@ -1,4 +1,5 @@
 const googleCalendar = require('../integrations/google-calendar');
+const log = require('../utils/logger').child({ module: 'calendar' });
 const userStore = require('../stores/user-store');
 const emailDirectory = require('../core/email-directory');
 const { parseTime } = require('../utils/time');
@@ -36,7 +37,7 @@ async function handleQuery(userId, params, sendDm) {
     const dayLabel = (params.date || 'today') === 'today' ? 'today' : params.date === 'tomorrow' ? 'tomorrow' : params.date;
     return `*Your calendar for ${dayLabel} (${events.length} events):*\n${lines.join('\n')}`;
   } catch (err) {
-    console.error('[Calendar] Query failed:', err.message);
+    log.error({ err }, 'Query failed');
     if (err.message?.includes('invalid_grant') || err.message?.includes('Token')) {
       return promptAuth(userId);
     }
@@ -95,7 +96,7 @@ async function handleCreate(userId, params, sendDm) {
     if (notFound.length) response += `\n⚠️ Couldn't find emails for: ${notFound.join(', ')}`;
     return response;
   } catch (err) {
-    console.error('[Calendar] Create failed:', err.message);
+    log.error({ err }, 'Create failed');
     return `Couldn't create the meeting: ${err.message}`;
   }
 }
@@ -108,7 +109,7 @@ async function handleAuthCode(userId, code) {
     await googleCalendar.exchangeCode(userId, code.trim());
     return "Google Calendar connected! Now ask me about your schedule or create meetings.";
   } catch (err) {
-    console.error('[Calendar] Code exchange failed:', err.message);
+    log.error({ err }, 'Code exchange failed');
     return `Auth failed: ${err.message}. Try again — ask me about your calendar.`;
   }
 }

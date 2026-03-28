@@ -1,4 +1,5 @@
 const claude = require('../integrations/gemini');
+const log = require('../utils/logger').child({ module: 'triage' });
 
 const SYSTEM_PROMPT = `You are Donna, a Slack alert triage assistant. Your job is to classify Slack messages as either "noise" or "attention".
 
@@ -41,7 +42,7 @@ async function classifyBatch(messages) {
     const results = await claude.askJson(SYSTEM_PROMPT, `Classify these messages:\n\n${formatted}`);
     return results;
   } catch (err) {
-    console.error('Classification failed:', err.message);
+    log.error({ err }, 'Classification failed');
     // On failure, mark everything as attention (safe default)
     return messages.map((_, i) => ({
       index: i,

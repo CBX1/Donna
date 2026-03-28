@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const log = require('../utils/logger').child({ module: 'evolve' });
 const claude = require('../integrations/gemini');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -67,7 +68,7 @@ function readSourceFiles() {
       if (fs.existsSync(fullPath)) {
         files[relPath] = fs.readFileSync(fullPath, 'utf8');
       }
-    } catch (err) { console.error('[Evolve] readSourceFiles failed:', err.message); }
+    } catch (err) { log.error({ err }, 'readSourceFiles failed'); }
   }
   return files;
 }
@@ -118,7 +119,7 @@ function restart() {
     execSync('pm2 restart donna', { timeout: 10000 });
     return true;
   } catch (err) {
-    console.error('PM2 restart failed:', err.message);
+    log.error({ err }, 'PM2 restart failed');
     return false;
   }
 }

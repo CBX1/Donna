@@ -1,4 +1,5 @@
 const reminderStore = require('../stores/reminder-store');
+const log = require('../utils/logger').child({ module: 'reminders' });
 const { parseTime } = require('../utils/time');
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -16,7 +17,7 @@ async function handleSet(userId, params, sendDm) {
       `*Donna here.* You told me to nudge you about: ${r.text}`,
       `*Don't forget:* ${r.text} — you're welcome.`,
     ];
-    sendDm(r.userId, pick(msgs)).catch(err => console.error('Reminder DM failed:', err));
+    sendDm(r.userId, pick(msgs)).catch(err => log.error({ err }, 'Reminder DM failed'));
   });
 
   const timeStr = triggerAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });

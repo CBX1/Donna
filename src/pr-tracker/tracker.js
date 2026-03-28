@@ -1,4 +1,5 @@
 const gemini = require('../integrations/gemini');
+const log = require('../utils/logger').child({ module: 'pr' });
 const github = require('../integrations/github');
 const prStore = require('../stores/pr-store');
 const notion = require('../integrations/notion');
@@ -23,7 +24,7 @@ async function detectFromDm(messageText, userId, senderName) {
   const urlMatch = messageText.match(/https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/);
   if (!urlMatch && !messageText.match(/github\.com.*\/pull\//i) && !messageText.match(/pull.*request/i)) return;
 
-  console.log(`[PR] DM contains PR link, detecting...`);
+  log.info('DM contains PR link, detecting');
 
   try {
     let prUrl;
@@ -50,9 +51,9 @@ async function detectFromDm(messageText, userId, senderName) {
     // Always sync to Notion
     await syncPrToNotion(userId, prUrl, details?.title || 'PR', details?.author || senderName);
 
-    console.log(`[PR] Tracked from DM: ${prUrl} by ${details?.author || senderName} (new: ${added})`);
+    log.info({ prUrl, author: details?.author || senderName, isNew: added }, 'Tracked from DM');
   } catch (err) {
-    console.error('[PR] DM detection failed:', err.message);
+    log.error({ err }, 'DM detection failed');
   }
 }
 
@@ -96,7 +97,7 @@ async function refreshPrsForUser(userId) {
         const state = details.merged ? 'merged' : 'closed';
         prStore.markMergedOrClosed(userId, pr.pr_url, state);
         await markPrDoneInNotion(userId, pr.pr_url);
-        console.log(`[PR] ${pr.pr_url} — ${state}, DB + Notion marked Done`);
+        log.info({ prUrl: pr.pr_url, state }, 'DB + Notion marked Done');
       } else {
         // PR is still open — keep tracking regardless of assignment
         // Mark as 'reviewed' (still shows in pending list) — do NOT touch Notion
@@ -121,7 +122,7 @@ async function syncPrToNotion(userId, prUrl, title, author) {
     });
   } catch (err) {
     // Might already exist or Notion error — not critical
-    console.error('[PR] Notion sync failed:', err.message);
+    log.error({ err }, 'Notion sync failed');
   }
 }
 
@@ -134,9 +135,9 @@ async function markPrDoneInNotion(userId, prUrl) {
 
   try {
     await notion.markPrDoneByUrl(user.notion_database_id, prUrl);
-    console.log(`[PR] Notion marked Done: ${prUrl}`);
+    log.info({ prUrl }, 'Notion marked Done');
   } catch (err) {
-    console.error('[PR] Notion status update failed:', err.message);
+    log.error({ err }, 'Notion status update failed');
   }
 }
 

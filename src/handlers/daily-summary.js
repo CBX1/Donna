@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const log = require('../utils/logger').child({ module: 'daily-summary' });
 const triageLogStore = require('../stores/triage-log-store');
 const prStore = require('../stores/pr-store');
 const userStore = require('../stores/user-store');
@@ -17,14 +18,14 @@ function start(sendDm) {
       if (user.daily_summary_time === currentTime) {
         const summary = generate(user.id);
         sendDm(user.id, summary).catch(err =>
-          console.error(`[Summary] Failed to send to ${user.display_name}:`, err.message)
+          log.error({ err, displayName: user.display_name }, 'Failed to send daily summary')
         );
-        console.log(`[Summary] Sent daily summary to ${user.display_name}`);
+        log.info({ displayName: user.display_name }, 'Sent daily summary');
       }
     }
   });
 
-  console.log('📊 Daily summary scheduler active');
+  log.info('Daily summary scheduler active');
 }
 
 function generate(userId) {
