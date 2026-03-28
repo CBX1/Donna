@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const log = require('./utils/logger').child({ module: 'db' });
 
-const DB_PATH = path.resolve(__dirname, '..', 'donna.db');
+const DB_PATH = process.env.DONNA_DB_PATH || path.resolve(__dirname, '..', 'donna.db');
 const MIGRATIONS_DIR = path.resolve(__dirname, '..', 'migrations');
 
 const db = new Database(DB_PATH);
