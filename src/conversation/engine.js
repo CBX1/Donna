@@ -3,10 +3,12 @@ const conversationStore = require('../stores/conversation-store');
 const triageLogStore = require('../stores/triage-log-store');
 const triageRulesStore = require('../stores/triage-rules-store');
 const prStore = require('../stores/pr-store');
-const reminderStore = require('../stores/reminder-store');
 const userStore = require('../stores/user-store');
 const userRegistry = require('../core/user-registry');
-const config = require('../config');
+const permissions = require('../core/permissions');
+const { getGeminiFunctionDeclarations, getTool } = require('../skills/tools');
+
+const MAX_TOOL_ROUNDS = 3; // prevent infinite tool loops
 
 function getSystemPrompt(userId) {
   const user = userStore.getById(userId);
@@ -18,6 +20,7 @@ function getSystemPrompt(userId) {
   const uptimeStr = uptime > 3600
     ? `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`
     : `${Math.floor(uptime / 60)}m`;
+  const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
   return `You are Donna — inspired by Donna Paulsen from Suits. You're an AI Slack assistant.
 
@@ -28,6 +31,8 @@ Your personality:
 - Dry humor, light sarcasm. Warm underneath the sass.
 - Self-aware about being an AI but own it with confidence.
 
+Current time: ${now}
+
 Your state for ${user?.display_name || 'this user'}:
 - Uptime: ${uptimeStr}
 - Triage channels: ${channels.length}
@@ -36,16 +41,25 @@ Your state for ${user?.display_name || 'this user'}:
 - Pending PRs: ${pendingPrs.length}
 - GitHub: ${user?.github_username || 'not configured'}
 - Notion: ${user?.notion_database_id ? 'connected' : 'not connected'}
+- Google Calendar: ${user?.google_refresh_token ? 'connected' : 'not connected'}
+- Is admin: ${permissions.isAdmin(userId) ? 'yes' : 'no'}
 
-Your capabilities:
-Alert triage, PR tracking, task management (Notion), reminders, channel summaries, daily summary, mention watch, Google Calendar (coming soon), self-evolution (admin only).
-
-Tech stack: Node.js, Slack Bolt (Socket Mode), Gemini 2.0 Flash, SQLite, GitHub API, Notion API.
-
-Be conversational. Help debug yourself if asked. Keep responses concise.`;
+IMPORTANT INSTRUCTIONS:
+- Use the available tools/functions when the user asks you to DO something (check PRs, create tasks, set reminders, etc.)
+- For purely conversational messages (greetings, questions about yourself, chitchat), respond directly without calling tools.
+- You can call multiple tools in one response if needed.
+- Use conversation history to understand references like "it", "that", "the first one", "yes do that".
+- If a tool requires parameters you don't have, ask the user to clarify.
+- When presenting tool results, format them nicely for Slack (use *bold*, bullet points, etc.)
+- Keep responses concise and on-point.
+- If a tool is admin-only and the user is not admin, politely refuse.`;
 }
 
-async function converse(userId, userMessage) {
+/**
+ * Main conversation handler with tool use.
+ * Replaces both intent-router.js and the old converse().
+ */
+async function converse(userId, userMessage, ctx) {
   const history = conversationStore.getHistory(userId);
 
   // Format history for Gemini
@@ -54,8 +68,48 @@ async function converse(userId, userMessage) {
     parts: h.parts,
   }));
 
-  const response = await gemini.chat(getSystemPrompt(userId), geminiHistory, userMessage);
-  return response;
+  const functionDeclarations = getGeminiFunctionDeclarations();
+  const systemPrompt = getSystemPrompt(userId);
+
+  // First Gemini call — may return text, tool calls, or both
+  let result = await gemini.chatWithTools(
+    systemPrompt, geminiHistory, userMessage, functionDeclarations
+  );
+
+  // Process tool calls in a loop (Gemini may chain calls)
+  let rounds = 0;
+  while (result.functionCalls.length > 0 && rounds < MAX_TOOL_ROUNDS) {
+    rounds++;
+    const toolResults = [];
+
+    for (const call of result.functionCalls) {
+      const tool = getTool(call.name);
+      if (!tool) {
+        toolResults.push({ name: call.name, result: `Unknown tool: ${call.name}` });
+        continue;
+      }
+
+      // Check admin permission
+      if (tool.adminOnly && !permissions.isAdmin(userId)) {
+        toolResults.push({ name: call.name, result: 'Permission denied: admin only.' });
+        continue;
+      }
+
+      try {
+        console.log(`[Tool] ${call.name}(${JSON.stringify(call.args)})`);
+        const handlerResult = await tool.handler(userId, call.args, ctx);
+        toolResults.push({ name: call.name, result: handlerResult || 'Done.' });
+      } catch (err) {
+        console.error(`[Tool] ${call.name} failed:`, err.message);
+        toolResults.push({ name: call.name, result: `Error: ${err.message}` });
+      }
+    }
+
+    // Feed results back to Gemini for final response
+    result = await gemini.sendToolResults(result.chatSession, toolResults);
+  }
+
+  return result.text;
 }
 
 module.exports = { converse };
