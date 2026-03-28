@@ -55,7 +55,7 @@ async function sweep(botClient, userClient) {
   for (const [channelId, usersForChannel] of Object.entries(channelUsers)) {
     try {
       const channelName = await getChannelName(botClient, channelId);
-      const messages = await fetchNewMessages(botClient, channelId, usersForChannel[0].userId);
+      const messages = await fetchNewMessages(botClient, channelId, usersForChannel.map(u => u.userId));
 
       if (messages.length === 0) continue;
 
@@ -75,12 +75,18 @@ async function sweep(botClient, userClient) {
   }
 }
 
-async function fetchNewMessages(botClient, channelId, sampleUserId) {
-  const row = getLastProcessedStmt.get(sampleUserId, channelId);
-  let oldest;
-  if (row?.last_ts) {
-    oldest = row.last_ts;
-  } else {
+async function fetchNewMessages(botClient, channelId, userIds) {
+  // Use the EARLIEST last_ts across all users — ensures no user misses messages
+  let oldest = null;
+  for (const uid of userIds) {
+    const row = getLastProcessedStmt.get(uid, channelId);
+    if (row?.last_ts) {
+      if (!oldest || parseFloat(row.last_ts) < parseFloat(oldest)) {
+        oldest = row.last_ts;
+      }
+    }
+  }
+  if (!oldest) {
     // First time seeing this channel — look back to start of today (IST)
     const now = new Date();
     const istMidnight = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -107,7 +113,8 @@ async function triageForUser(botClient, userClient, userId, userToken, channelId
   upsertLastProcessedStmt.run(userId, channelId, messages[messages.length - 1].ts, messages[messages.length - 1].ts);
 
   const isAutoRead = triageRulesStore.isAutoReadChannel(userId, channelName);
-  let totalNoise = 0, totalAttention = 0, latestNoiseTts = null;
+  let totalNoise = 0, totalAttention = 0;
+  let earliestAttentionTs = null, latestNoiseTts = null;
 
   if (isAutoRead) {
     for (const msg of messages) {
@@ -132,7 +139,7 @@ async function triageForUser(botClient, userClient, userId, userToken, channelId
           reason: channelRule.reason, messageText: text, messageTs: msg.ts,
         });
         if (channelRule.classification === 'noise') { totalNoise++; latestNoiseTts = msg.ts; }
-        else totalAttention++;
+        else { totalAttention++; if (!earliestAttentionTs) earliestAttentionTs = msg.ts; }
         continue;
       }
 
@@ -163,17 +170,25 @@ async function triageForUser(botClient, userClient, userId, userToken, channelId
           reason: result.reason, messageText: extractText(msg), messageTs: msg.ts,
         });
         if (result.classification === 'noise') { totalNoise++; latestNoiseTts = msg.ts; }
-        else totalAttention++;
+        else { totalAttention++; if (!earliestAttentionTs) earliestAttentionTs = msg.ts; }
       }
     }
   }
 
-  // Mark as read (using user's token if available)
+  // Mark noise as read — but ONLY up to the earliest attention message.
+  // Don't advance past attention items or they'll appear "read" in Slack.
   if (latestNoiseTts && userToken) {
-    try {
-      const client = new (require('@slack/web-api').WebClient)(userToken);
-      await client.conversations.mark({ channel: channelId, ts: latestNoiseTts });
-    } catch (err) { log.error({ err }, 'conversations.mark failed'); }
+    let markTs = latestNoiseTts;
+    if (earliestAttentionTs && parseFloat(earliestAttentionTs) < parseFloat(latestNoiseTts)) {
+      // There's an attention message before the latest noise — don't mark past it
+      markTs = null;
+    }
+    if (markTs) {
+      try {
+        const client = new (require('@slack/web-api').WebClient)(userToken);
+        await client.conversations.mark({ channel: channelId, ts: markTs });
+      } catch (err) { log.error({ err }, 'conversations.mark failed'); }
+    }
   }
 
   if (totalNoise > 0 || totalAttention > 0) {
