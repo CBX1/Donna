@@ -1,5 +1,6 @@
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+// override: true ensures .env file values win over stale shell exports
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env'), override: true });
 
 // Force IST timezone for all Date operations
 process.env.TZ = 'Asia/Kolkata';

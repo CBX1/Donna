@@ -57,6 +57,21 @@ app.event('app_mention', async ({ event, say }) => {
   await app.start();
   log.info('Donna is running');
 
+  // Self-test integrations
+  const selfTest = require('./core/self-test');
+  const health = require('./core/health');
+  try {
+    const { results } = await selfTest.run(app);
+    health.setIntegrations(results);
+  } catch (err) {
+    log.error({ err }, 'Critical self-test failed — exiting');
+    process.exit(1);
+  }
+
+  // Health check endpoint
+  const HEALTH_PORT = parseInt(process.env.HEALTH_PORT) || 3001;
+  health.start(HEALTH_PORT);
+
   // Build email directory from Slack workspace
   const emailDirectory = require('./core/email-directory');
   try {

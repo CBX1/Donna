@@ -6,6 +6,7 @@ const triageRulesStore = require('../stores/triage-rules-store');
 const mentionWatchStore = require('../stores/mention-watch-store');
 const userStore = require('../stores/user-store');
 const userRegistry = require('../core/user-registry');
+const health = require('../core/health');
 const db = require('../db');
 
 // Cache channel names
@@ -26,6 +27,7 @@ function start(botClient, userClient, options = {}) {
 
   cron.schedule('*/5 * * * *', async () => {
     await sweep(botClient, userClient);
+    health.recordTriageSweep();
   });
 
   // Initial sweep
