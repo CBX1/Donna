@@ -111,7 +111,7 @@ const tools = [
 
   {
     name: 'get_triage_status',
-    description: 'Show what messages Donna triaged recently — how many were cleared as noise, which ones need the user\'s attention. Use this when the user asks "what did you triage", "any alerts", "what needs my attention", "triage report", "what did you handle".',
+    description: 'Show what messages Donna triaged recently — how many were cleared as noise, and which ones still need the user\'s attention. Returns a summary of triaged messages, not configuration.',
     parameters: { type: 'object', properties: {} },
     handler: async (userId, _params, ctx) => {
       const userStore = require('../stores/user-store');
@@ -123,7 +123,7 @@ const tools = [
 
   {
     name: 'add_triage_rule',
-    description: 'Add a PERMANENT triage rule — auto-mark an entire channel as read forever, or permanently ignore a text pattern. Only use when user EXPLICITLY asks to auto-read a channel or ignore a pattern. Do NOT use when user says they already read something or dismisses a single item.',
+    description: 'Add a permanent triage rule — auto-mark an entire channel as read, or permanently ignore a text pattern. This is a configuration change that affects all future messages.',
     parameters: {
       type: 'object',
       properties: {
@@ -157,7 +157,7 @@ const tools = [
 
   {
     name: 'list_triage_rules',
-    description: 'List the user\'s triage configuration — which channels are set to auto-read and which text patterns are being ignored. Use when user asks "what are my triage rules", "what channels do you auto-read", "show my triage config".',
+    description: 'List the user\'s triage configuration and how Donna is set up for them — which channels are set to auto-read, which text patterns are being ignored, and what channels are being monitored.',
     parameters: { type: 'object', properties: {} },
     handler: async (userId) => {
       const handler = require('../handlers/triage-rules');
@@ -167,7 +167,7 @@ const tools = [
 
   {
     name: 'dismiss_attention',
-    description: 'Dismiss/acknowledge attention items for a channel — mark them as read/handled. Use when user says "I\'ve read it", "already saw that", "dismiss it", "clear that channel", or acknowledges they\'ve seen the attention items.',
+    description: 'Dismiss attention items for a specific channel — mark them as handled so they stop appearing. This is a one-time acknowledgement, not a permanent rule.',
     parameters: {
       type: 'object',
       properties: {
