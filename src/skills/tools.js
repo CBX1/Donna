@@ -111,7 +111,7 @@ const tools = [
 
   {
     name: 'get_triage_status',
-    description: 'Show triage activity — what was cleared as noise and what needs attention',
+    description: 'Show what messages Donna triaged recently — how many were cleared as noise, which ones need the user\'s attention. Use this when the user asks "what did you triage", "any alerts", "what needs my attention", "triage report", "what did you handle".',
     parameters: { type: 'object', properties: {} },
     handler: async (userId, _params, ctx) => {
       const userStore = require('../stores/user-store');
@@ -123,7 +123,7 @@ const tools = [
 
   {
     name: 'add_triage_rule',
-    description: 'Add a triage rule — auto-mark a channel as read, or ignore a text pattern. Also used when user reports known issues or noise.',
+    description: 'Add a PERMANENT triage rule — auto-mark an entire channel as read forever, or permanently ignore a text pattern. Only use when user EXPLICITLY asks to auto-read a channel or ignore a pattern. Do NOT use when user says they already read something or dismisses a single item.',
     parameters: {
       type: 'object',
       properties: {
@@ -157,11 +157,34 @@ const tools = [
 
   {
     name: 'list_triage_rules',
-    description: 'List active triage rules — what channels are auto-read and what patterns are ignored',
+    description: 'List the user\'s triage configuration — which channels are set to auto-read and which text patterns are being ignored. Use when user asks "what are my triage rules", "what channels do you auto-read", "show my triage config".',
     parameters: { type: 'object', properties: {} },
     handler: async (userId) => {
       const handler = require('../handlers/triage-rules');
       return handler.handleList(userId);
+    },
+  },
+
+  {
+    name: 'dismiss_attention',
+    description: 'Dismiss/acknowledge attention items for a channel — mark them as read/handled. Use when user says "I\'ve read it", "already saw that", "dismiss it", "clear that channel", or acknowledges they\'ve seen the attention items.',
+    parameters: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string', description: 'Channel name to dismiss attention items for' },
+      },
+      required: ['channel'],
+    },
+    handler: async (userId, params) => {
+      const db = require('../db');
+      const channelName = params.channel.replace('#', '').toLowerCase();
+      const result = db.prepare(
+        "UPDATE triage_log SET dismissed = 1 WHERE user_id = ? AND classification = 'attention' AND dismissed = 0 AND channel_name = ?"
+      ).run(userId, channelName);
+      if (result.changes > 0) {
+        return `Dismissed ${result.changes} attention item(s) from #${channelName}.`;
+      }
+      return `No pending attention items found for #${channelName}.`;
     },
   },
 

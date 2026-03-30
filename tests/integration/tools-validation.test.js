@@ -3,7 +3,7 @@ process.env.DONNA_DB_PATH = ':memory:';
 
 const { tools, getGeminiFunctionDeclarations, getTool } = require('../../src/skills/tools');
 
-const EXPECTED_TOOL_COUNT = 19;
+const EXPECTED_TOOL_COUNT = 20;
 
 describe('Tools Manifest — structural validation', () => {
   it(`has exactly ${EXPECTED_TOOL_COUNT} tools defined`, () => {
