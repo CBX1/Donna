@@ -7,8 +7,8 @@ function addMessage(userId, role, text) {
 }
 
 function getHistory(userId, maxMessages = 20) {
-  // Get last N messages from the last 12 hours
-  const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+  // Get last N messages from the last 24 hours
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const rows = db.prepare(`
     SELECT role, message, created_at FROM conversation_history
     WHERE user_id = ? AND created_at > ?

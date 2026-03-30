@@ -77,13 +77,27 @@ OTHER GUIDELINES:
  * Replaces both intent-router.js and the old converse().
  */
 async function converse(userId, userMessage, ctx) {
-  const history = conversationStore.getHistory(userId);
+  const history = conversationStore.getHistory(userId, 10);
 
-  // Format history for Gemini
-  const geminiHistory = history.map(h => ({
-    role: h.role,
-    parts: h.parts,
-  }));
+  // Format history for Gemini — must strictly alternate user/model
+  const geminiHistory = [];
+  for (const h of history) {
+    const last = geminiHistory[geminiHistory.length - 1];
+    if (last && last.role === h.role) {
+      // Same role consecutive — merge into last entry
+      last.parts[0].text += '\n' + (h.parts?.[0]?.text || '');
+    } else {
+      geminiHistory.push({ role: h.role, parts: [{ text: h.parts?.[0]?.text || '' }] });
+    }
+  }
+  // Gemini requires history to start with 'user' and alternate
+  if (geminiHistory.length > 0 && geminiHistory[0].role !== 'user') {
+    geminiHistory.shift();
+  }
+  // Must end with 'model' (the last response before current user message)
+  if (geminiHistory.length > 0 && geminiHistory[geminiHistory.length - 1].role === 'user') {
+    geminiHistory.pop();
+  }
 
   const functionDeclarations = getGeminiFunctionDeclarations();
   const systemPrompt = getSystemPrompt(userId);
@@ -94,6 +108,7 @@ async function converse(userId, userMessage, ctx) {
   );
 
   // Process tool calls in a loop (Gemini may chain calls)
+  const toolsCalled = [];
   let rounds = 0;
   while (result.functionCalls.length > 0 && rounds < MAX_TOOL_ROUNDS) {
     rounds++;
@@ -123,11 +138,14 @@ async function converse(userId, userMessage, ctx) {
       }
     }
 
+    // Track which tools were called for history
+    toolsCalled.push(...toolResults.map(r => `[${r.name}]: ${r.result.substring(0, 200)}`));
+
     // Feed results back to Gemini for final response
     result = await gemini.sendToolResults(result.chatSession, toolResults);
   }
 
-  return result.text;
+  return { text: result.text, toolsCalled };
 }
 
 module.exports = { converse };

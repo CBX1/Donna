@@ -58,12 +58,17 @@ async function handle({ message, say, app }) {
     };
 
     // Unified conversation — Gemini decides what to do (respond, call tools, or both)
-    const response = await conversationEngine.converse(userId, text, ctx);
+    const { text: response, toolsCalled } = await conversationEngine.converse(userId, text, ctx);
 
-    // Track conversation history
+    // Track conversation history — include tool context so Gemini remembers what it did
     if (userId && text) {
       conversationStore.addMessage(userId, 'user', text);
-      if (response) conversationStore.addMessage(userId, 'model', response);
+      if (response) {
+        const modelMsg = toolsCalled.length > 0
+          ? `${toolsCalled.join('\n')}\n\n${response}`
+          : response;
+        conversationStore.addMessage(userId, 'model', modelMsg);
+      }
     }
 
     if (response) await say(response);

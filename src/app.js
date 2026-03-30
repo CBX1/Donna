@@ -45,8 +45,9 @@ app.event('app_mention', async ({ event, say }) => {
   if (!text) return;
   try {
     const conversationEngine = require('./conversation/engine');
-    const response = await conversationEngine.converse(event.user, text);
-    await say({ text: response, thread_ts: event.ts });
+    const ctx = { slackClient: app.client, say, sendDm: (uid, msg) => sendDm(uid, msg) };
+    const { text: response } = await conversationEngine.converse(event.user, text, ctx);
+    if (response) await say({ text: response, thread_ts: event.ts });
   } catch (err) {
     log.error({ err }, 'Mention handler error');
   }
@@ -91,7 +92,7 @@ app.event('app_mention', async ({ event, say }) => {
   });
 
   // Prune old data
-  conversationStore.pruneOlderThan(12);
+  conversationStore.pruneOlderThan(48);
   triageLogStore.pruneOlderThan(7);
 
   // Seed admin user if not exists
