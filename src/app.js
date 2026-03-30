@@ -92,7 +92,7 @@ app.event('app_mention', async ({ event, say }) => {
   });
 
   // Prune old data
-  conversationStore.pruneOlderThan(48);
+  conversationStore.pruneOlderThan(12);
   triageLogStore.pruneOlderThan(7);
 
   // Seed admin user if not exists

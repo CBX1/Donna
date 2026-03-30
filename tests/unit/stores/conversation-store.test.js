@@ -95,11 +95,11 @@ describe('conversationStore.getHistory', () => {
     expect(history).toHaveLength(20);
   });
 
-  it('only returns messages within the 24-hour time window', () => {
+  it('only returns messages within the 12-hour time window', () => {
     insertMessage(USER, 'user', 'recent', 1000);
 
-    // Insert one message that is 25 hours old (outside window) — use ISO format
-    const oldTs = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    // Insert one message that is 13 hours old (outside window) — use ISO format
+    const oldTs = new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString();
     db.prepare(
       'INSERT INTO conversation_history (user_id, role, message, created_at) VALUES (?, ?, ?, ?)'
     ).run(USER, 'user', 'old message', oldTs);
