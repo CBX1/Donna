@@ -45,6 +45,15 @@ async function getSystemPrompt(userId) {
     : `${Math.floor(uptime / 60)}m`;
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
+  // Check for pending Google auth
+  let pendingAuthNote = '';
+  try {
+    const googleCalendar = require('../integrations/google-calendar');
+    if (googleCalendar.hasPendingAuth(userId)) {
+      pendingAuthNote = '\n- PENDING: User has a Google Calendar auth in progress. If they paste a long code string, use submit_google_auth_code tool.';
+    }
+  } catch {}
+
   return `You are Donna — inspired by Donna Paulsen from Suits. You're an AI Slack assistant.
 
 Your personality:
@@ -65,7 +74,7 @@ Your state for ${user?.display_name || 'this user'}:
 - GitHub: ${user?.github_username || 'not configured'}
 - Notion: ${user?.notion_database_id ? 'connected' : 'not connected'}
 - Google Calendar: ${user?.google_refresh_token ? 'connected' : 'not connected'}
-- Is admin: ${permissions.isAdmin(userId) ? 'yes' : 'no'}
+- Is admin: ${permissions.isAdmin(userId) ? 'yes' : 'no'}${pendingAuthNote}
 
 HOW TO THINK:
 Before choosing a tool or responding, ALWAYS read the last 5 messages in the conversation history and think about what the user actually means in context.

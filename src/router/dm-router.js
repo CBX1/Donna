@@ -2,16 +2,19 @@ const config = require('../config');
 const log = require('../utils/logger').child({ module: 'dm' });
 const userRegistry = require('../core/user-registry');
 const conversationStore = require('../stores/conversation-store');
-const prDetector = require('../pr-tracker/tracker');
 const conversationEngine = require('../conversation/engine');
 const health = require('../core/health');
 const metrics = require('../core/metrics');
 
 /**
  * Handle a DM message. Called from app.js.
- * Uses unified conversational engine with Gemini function calling.
+ *
+ * Design: The conversation brain (Gemini) is ALWAYS the first decision-maker.
+ * The router only handles technical filtering (bot messages, missing API key).
+ * All intent understanding, tool selection, and action decisions are made by the brain.
  */
 async function handle({ message, say, app }) {
+  // Technical filters only — not decisions
   if (message.subtype === 'bot_message' || message.bot_id) return;
   if (message.channel_type !== 'im') return;
 
@@ -24,30 +27,18 @@ async function handle({ message, say, app }) {
       return;
     }
 
-    // Get/create user
+    // Get/create user (needed for context, not a decision)
     let displayName = 'Unknown';
     try {
       const info = await app.client.users.info({ user: userId });
       displayName = info.user.real_name || info.user.name || 'Unknown';
     } catch (err) { log.error({ err }, 'users.info failed'); }
 
-    const { user, isNew } = userRegistry.ensureUser(userId, displayName);
-
-    // Check if user is pasting a Google auth code
-    const googleCalendar = require('../integrations/google-calendar');
-    if (googleCalendar.hasPendingAuth(userId) && text.match(/^[0-9a-zA-Z/\-_]{20,}$/)) {
-      const calendarHandler = require('../handlers/calendar');
-      const result = await calendarHandler.handleAuthCode(userId, text);
-      await say(result);
-      return;
-    }
+    userRegistry.ensureUser(userId, displayName);
 
     health.recordMessage();
     metrics.increment('messagesHandled');
-
-    // PR detection from DMs
-    log.info({ text: text.substring(0, 200) }, 'Raw text');
-    const prDetected = await prDetector.detectFromDm(text, userId, displayName);
+    log.info({ text: text.substring(0, 200) }, 'DM received');
 
     // Context for tool handlers
     const ctx = {
@@ -57,24 +48,16 @@ async function handle({ message, say, app }) {
       sendDm: (uid, msg) => sendDm(app, uid, msg),
     };
 
-    // Add PR detection context so Gemini can acknowledge it
-    let enrichedText = text;
-    if (prDetected) {
-      enrichedText += `\n\n[SYSTEM: A PR was auto-detected and tracked: "${prDetected.title}" by ${prDetected.author} (${prDetected.isNew ? 'newly added' : 'already tracked'})]`;
-    }
+    // Brain decides everything — what to do, which tools to call, how to respond
+    const { text: response, toolsCalled } = await conversationEngine.converse(userId, text, ctx);
 
-    // Unified conversation — Gemini decides what to do (respond, call tools, or both)
-    const { text: response, toolsCalled } = await conversationEngine.converse(userId, enrichedText, ctx);
-
-    // Track conversation history — include tool context so Gemini remembers what it did
-    if (userId && text) {
-      conversationStore.addMessage(userId, 'user', text);
-      if (response) {
-        const modelMsg = toolsCalled.length > 0
-          ? `${toolsCalled.join('\n')}\n\n${response}`
-          : response;
-        conversationStore.addMessage(userId, 'model', modelMsg);
-      }
+    // Track conversation history — include tool context so brain remembers what it did
+    conversationStore.addMessage(userId, 'user', text);
+    if (response) {
+      const modelMsg = toolsCalled.length > 0
+        ? `${toolsCalled.join('\n')}\n\n${response}`
+        : response;
+      conversationStore.addMessage(userId, 'model', modelMsg);
     }
 
     if (response) await say(response);

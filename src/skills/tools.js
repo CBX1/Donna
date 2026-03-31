@@ -319,6 +319,20 @@ const tools = [
   },
 
   {
+    name: 'submit_google_auth_code',
+    description: 'Submit a Google OAuth authorization code to complete calendar setup. Use when the user pastes an auth code during Google Calendar setup.',
+    parameters: {
+      type: 'object',
+      properties: { code: { type: 'string', description: 'The authorization code pasted by the user' } },
+      required: ['code'],
+    },
+    handler: async (userId, params) => {
+      const handler = require('../handlers/calendar');
+      return handler.handleAuthCode(userId, params.code);
+    },
+  },
+
+  {
     name: 'evolve_donna',
     description: 'Modify Donna\'s own code — add features, fix behavior, improve capabilities. Admin only.',
     parameters: {
