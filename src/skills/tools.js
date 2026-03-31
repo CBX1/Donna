@@ -133,7 +133,7 @@ const tools = [
 
   {
     name: 'summarize_channel',
-    description: 'Get a summary of recent messages in a Slack channel',
+    description: 'Summarize messages from a specific named Slack channel',
     parameters: {
       type: 'object',
       properties: {

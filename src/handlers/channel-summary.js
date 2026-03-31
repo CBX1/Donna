@@ -10,8 +10,10 @@ async function handle(params, slackClient) {
   const { channel, timeframe } = params;
 
   try {
+    if (!channel) return 'ERROR: No channel name provided. The user probably didn\'t ask to summarize a specific channel — try a different tool.';
+
     const resolved = await resolveChannel(channel, slackClient);
-    if (!resolved) return `I couldn't find that channel. Make sure I'm added to it.`;
+    if (!resolved) return `ERROR: Channel "${channel}" not found. This might be the wrong tool — if the user was asking about triage activity, use get_triage_status instead.`;
 
     let oldest;
     const now = Date.now() / 1000;
