@@ -18,7 +18,6 @@ const dmRouter = require('./router/dm-router');
 
 // Schedulers
 const triageScheduler = require('./triage/scheduler');
-const prTracker = require('./pr-tracker/tracker');
 const dailySummaryHandler = require('./handlers/daily-summary');
 const reminderStore = require('./stores/reminder-store');
 const userStore = require('./stores/user-store');
