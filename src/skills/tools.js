@@ -22,6 +22,54 @@ const tools = [
   },
 
   {
+    name: 'track_pr',
+    description: 'Add a PR to the user\'s review tracking list. Use when the user shares a GitHub PR URL and wants it tracked, or asks to add/track/watch a PR.',
+    parameters: {
+      type: 'object',
+      properties: {
+        pr_url: { type: 'string', description: 'GitHub PR URL (e.g. https://github.com/org/repo/pull/123)' },
+      },
+      required: ['pr_url'],
+    },
+    handler: async (userId, params) => {
+      const github = require('../integrations/github');
+      const prStore = require('../stores/pr-store');
+      const notion = require('../integrations/notion');
+      const userStore = require('../stores/user-store');
+
+      // Clean URL — strip Slack formatting
+      let prUrl = params.pr_url.replace(/<([^|>]+)(\|[^>]*)?>/, '$1');
+      prUrl = prUrl.replace(/\/(files|changes|commits|checks).*$/, '');
+
+      const details = await github.getPrDetails(prUrl);
+      if (!details) return `Couldn't fetch PR details for ${prUrl}. Is the URL correct?`;
+
+      if (details.state === 'closed' || details.merged) {
+        return `That PR is already ${details.merged ? 'merged' : 'closed'}: *${details.title}*`;
+      }
+
+      prStore.upsert(userId, {
+        prUrl,
+        title: details.title,
+        author: details.author,
+        detectedFrom: 'dm',
+      });
+
+      // Sync to Notion
+      const user = userStore.getById(userId);
+      if (user?.notion_database_id) {
+        try {
+          await notion.createPrReview(user.notion_database_id, {
+            prUrl, context: details.title, assignee: details.author,
+          });
+        } catch {}
+      }
+
+      return `Tracked: *${details.title}* by ${details.author} (${details.isDraft ? 'draft' : 'open'})`;
+    },
+  },
+
+  {
     name: 'create_task',
     description: 'Create a new task or todo item for the user',
     parameters: {

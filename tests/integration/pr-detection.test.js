@@ -130,7 +130,7 @@ describe('PR Detection Pipeline — detectFromDm', () => {
     github.getPrDetails.mockRejectedValue(new Error('GitHub API unavailable'));
 
     // detectFromDm catches internally and should not propagate
-    await expect(tracker.detectFromDm(PR_URL, USER_ID, SENDER_NAME)).resolves.toBeUndefined();
+    await expect(tracker.detectFromDm(PR_URL, USER_ID, SENDER_NAME)).resolves.toBeNull();
   });
 
   it('does not duplicate a PR that is already tracked', async () => {

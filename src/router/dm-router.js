@@ -45,9 +45,9 @@ async function handle({ message, say, app }) {
     health.recordMessage();
     metrics.increment('messagesHandled');
 
-    // Silent PR detection from DMs
+    // PR detection from DMs
     log.info({ text: text.substring(0, 200) }, 'Raw text');
-    await prDetector.detectFromDm(text, userId, displayName);
+    const prDetected = await prDetector.detectFromDm(text, userId, displayName);
 
     // Context for tool handlers
     const ctx = {
@@ -57,8 +57,14 @@ async function handle({ message, say, app }) {
       sendDm: (uid, msg) => sendDm(app, uid, msg),
     };
 
+    // Add PR detection context so Gemini can acknowledge it
+    let enrichedText = text;
+    if (prDetected) {
+      enrichedText += `\n\n[SYSTEM: A PR was auto-detected and tracked: "${prDetected.title}" by ${prDetected.author} (${prDetected.isNew ? 'newly added' : 'already tracked'})]`;
+    }
+
     // Unified conversation — Gemini decides what to do (respond, call tools, or both)
-    const { text: response, toolsCalled } = await conversationEngine.converse(userId, text, ctx);
+    const { text: response, toolsCalled } = await conversationEngine.converse(userId, enrichedText, ctx);
 
     // Track conversation history — include tool context so Gemini remembers what it did
     if (userId && text) {

@@ -19,10 +19,13 @@ Do NOT track: general discussion without links, "I merged PR #42" (already done)
 /**
  * Detect PR from a DM message. Non-blocking.
  */
+/**
+ * Detect PR from a DM message. Returns detection info if found (for conversation context).
+ */
 async function detectFromDm(messageText, userId, senderName) {
   // Extract GitHub PR URLs directly from Slack-formatted text
   const urlMatch = messageText.match(/https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/);
-  if (!urlMatch && !messageText.match(/github\.com.*\/pull\//i) && !messageText.match(/pull.*request/i)) return;
+  if (!urlMatch && !messageText.match(/github\.com.*\/pull\//i) && !messageText.match(/pull.*request/i)) return null;
 
   log.info('DM contains PR link, detecting');
 
@@ -35,7 +38,7 @@ async function detectFromDm(messageText, userId, senderName) {
     } else {
       // Fall back to Gemini for less obvious PR references
       const result = await gemini.askJson(DETECT_PROMPT, `From: ${senderName}\nMessage: ${messageText}`);
-      if (!result.is_pr || !result.pr_url) return;
+      if (!result.is_pr || !result.pr_url) return null;
       prUrl = result.pr_url.replace(/\/(files|changes|commits|checks).*$/, '');
     }
 
@@ -52,8 +55,10 @@ async function detectFromDm(messageText, userId, senderName) {
     await syncPrToNotion(userId, prUrl, details?.title || 'PR', details?.author || senderName);
 
     log.info({ prUrl, author: details?.author || senderName, isNew: added }, 'Tracked from DM');
+    return { prUrl, title: details?.title, author: details?.author, isNew: added };
   } catch (err) {
     log.error({ err }, 'DM detection failed');
+    return null;
   }
 }
 
