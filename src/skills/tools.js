@@ -33,7 +33,6 @@ const tools = [
     },
     handler: async (userId, params) => {
       const github = require('../integrations/github');
-      const prStore = require('../stores/pr-store');
       const notion = require('../integrations/notion');
       const userStore = require('../stores/user-store');
 
@@ -48,22 +47,14 @@ const tools = [
         return `That PR is already ${details.merged ? 'merged' : 'closed'}: *${details.title}*`;
       }
 
-      prStore.upsert(userId, {
-        prUrl,
-        title: details.title,
-        author: details.author,
-        detectedFrom: 'dm',
-      });
-
-      // Sync to Notion
       const user = userStore.getById(userId);
-      if (user?.notion_database_id) {
-        try {
-          await notion.createPrReview(user.notion_database_id, {
-            prUrl, context: details.title, assignee: details.author,
-          });
-        } catch {}
+      if (!user?.notion_database_id) {
+        return "I don't have a Notion database set up for you yet. Tell me to set up or share a Notion database link.";
       }
+
+      await notion.createPrReview(user.notion_database_id, {
+        prUrl, context: details.title, assignee: details.author,
+      });
 
       return `Tracked: *${details.title}* by ${details.author} (${details.isDraft ? 'draft' : 'open'})`;
     },

@@ -3,7 +3,7 @@ const log = require('../utils/logger').child({ module: 'conversation' });
 const conversationStore = require('../stores/conversation-store');
 const triageLogStore = require('../stores/triage-log-store');
 const triageRulesStore = require('../stores/triage-rules-store');
-const prStore = require('../stores/pr-store');
+const notion = require('../integrations/notion');
 const userStore = require('../stores/user-store');
 const userRegistry = require('../core/user-registry');
 const permissions = require('../core/permissions');
@@ -12,10 +12,31 @@ const metrics = require('../core/metrics');
 
 const MAX_TOOL_ROUNDS = 3; // prevent infinite tool loops
 
-function getSystemPrompt(userId) {
+// Cache PR counts briefly to avoid a Notion API call on every message
+const prCountCache = new Map(); // userId -> { count, ts }
+const PR_COUNT_TTL_MS = 60 * 1000; // 1 minute
+
+async function getPendingPrCount(userId) {
+  const user = userStore.getById(userId);
+  if (!user?.notion_database_id) return 0;
+
+  const cached = prCountCache.get(userId);
+  if (cached && Date.now() - cached.ts < PR_COUNT_TTL_MS) return cached.count;
+
+  try {
+    const prs = await notion.queryPrReviews(user.notion_database_id, 'open');
+    const count = prs.length;
+    prCountCache.set(userId, { count, ts: Date.now() });
+    return count;
+  } catch {
+    return cached?.count ?? 0;
+  }
+}
+
+async function getSystemPrompt(userId) {
   const user = userStore.getById(userId);
   const todayStats = triageLogStore.getTodayStats(userId);
-  const pendingPrs = prStore.getPending(userId);
+  const pendingPrCount = await getPendingPrCount(userId);
   const rulesSummary = triageRulesStore.getUserRulesSummary(userId);
   const channels = userRegistry.getTriageChannels(userId);
   const uptime = process.uptime();
@@ -40,7 +61,7 @@ Your state for ${user?.display_name || 'this user'}:
 - Triage channels: ${channels.length}
 - Today's triage: ${todayStats.totalNoise} noise cleared, ${todayStats.totalAttention} needing attention
 - Auto-read channels: ${rulesSummary.autoRead.length > 0 ? rulesSummary.autoRead.join(', ') : 'none'}
-- Pending PRs: ${pendingPrs.length}
+- Pending PRs: ${pendingPrCount}
 - GitHub: ${user?.github_username || 'not configured'}
 - Notion: ${user?.notion_database_id ? 'connected' : 'not connected'}
 - Google Calendar: ${user?.google_refresh_token ? 'connected' : 'not connected'}
@@ -100,7 +121,7 @@ async function converse(userId, userMessage, ctx) {
   }
 
   const functionDeclarations = getGeminiFunctionDeclarations();
-  const systemPrompt = getSystemPrompt(userId);
+  const systemPrompt = await getSystemPrompt(userId);
 
   // First Gemini call — may return text, tool calls, or both
   let result = await gemini.chatWithTools(

@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const log = require('../utils/logger').child({ module: 'daily-summary' });
 const triageLogStore = require('../stores/triage-log-store');
-const prStore = require('../stores/pr-store');
+const notion = require('../integrations/notion');
 const userStore = require('../stores/user-store');
 const { formatAge } = require('../utils/time');
 
@@ -16,8 +16,7 @@ function start(sendDm) {
     const users = userStore.listOnboarded();
     for (const user of users) {
       if (user.daily_summary_time === currentTime) {
-        const summary = generate(user.id);
-        sendDm(user.id, summary).catch(err =>
+        generate(user.id).then(summary => sendDm(user.id, summary)).catch(err =>
           log.error({ err, displayName: user.display_name }, 'Failed to send daily summary')
         );
         log.info({ displayName: user.display_name }, 'Sent daily summary');
@@ -28,9 +27,19 @@ function start(sendDm) {
   log.info('Daily summary scheduler active');
 }
 
-function generate(userId) {
+async function generate(userId) {
+  const user = userStore.getById(userId);
   const stats = triageLogStore.getTodayStats(userId);
-  const pendingPrs = prStore.getPending(userId);
+
+  // Fetch pending PRs from Notion if connected
+  let pendingPrs = [];
+  if (user?.notion_database_id) {
+    try {
+      pendingPrs = await notion.queryPrReviews(user.notion_database_id, 'open');
+    } catch (err) {
+      log.error({ err }, 'Failed to fetch PRs from Notion for daily summary');
+    }
+  }
 
   const lines = [];
   lines.push("*Hey — here's your end-of-day wrap-up from Donna.*");
@@ -41,15 +50,15 @@ function generate(userId) {
     lines.push("Quiet day on the alert front. Nothing came through.");
   } else {
     lines.push(`I went through *${total} messages* across your alert channels today.`);
-    lines.push(`  ✅ Cleared as noise: ${stats.totalNoise}`);
-    lines.push(`  ⚠️ Flagged for you: ${stats.totalAttention}`);
+    lines.push(`  Cleared as noise: ${stats.totalNoise}`);
+    lines.push(`  Flagged for you: ${stats.totalAttention}`);
 
     if (stats.totalNoise > 0) {
       lines.push('');
       lines.push('*Cleared by channel:*');
       Object.entries(stats.noiseByChannel)
         .sort((a, b) => b[1] - a[1])
-        .forEach(([ch, count]) => lines.push(`  • #${ch}: ${count}`));
+        .forEach(([ch, count]) => lines.push(`  - #${ch}: ${count}`));
     }
 
     if (stats.totalAttention > 0) {
@@ -57,7 +66,7 @@ function generate(userId) {
       lines.push('*Needed attention:*');
       Object.entries(stats.attentionByChannel)
         .sort((a, b) => b[1] - a[1])
-        .forEach(([ch, count]) => lines.push(`  • #${ch}: ${count}`));
+        .forEach(([ch, count]) => lines.push(`  - #${ch}: ${count}`));
     }
   }
 
@@ -66,7 +75,7 @@ function generate(userId) {
     lines.push("No PRs waiting on you. Clean conscience.");
   } else {
     lines.push(`*${pendingPrs.length} PR${pendingPrs.length > 1 ? 's' : ''} still need your review:*`);
-    pendingPrs.forEach(pr => lines.push(`  • ${pr.title || 'PR'} — by ${pr.author}, ${formatAge(pr.created_at)}`));
+    pendingPrs.forEach(pr => lines.push(`  - ${pr.title || 'PR'} — by ${pr.assignee}, ${formatAge(pr.created)}`));
   }
 
   lines.push('');

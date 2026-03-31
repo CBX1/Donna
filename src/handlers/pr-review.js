@@ -1,20 +1,27 @@
-const prStore = require('../stores/pr-store');
 const prTracker = require('../pr-tracker/tracker');
+const notion = require('../integrations/notion');
+const userStore = require('../stores/user-store');
 const { formatAge } = require('../utils/time');
 
 async function handle(userId) {
-  // Refresh from GitHub + clean up merged/closed + sync Notion
+  const user = userStore.getById(userId);
+
+  if (!user?.notion_database_id) {
+    return "I don't have a Notion database set up for you yet. Tell me to set up or share a Notion database link.";
+  }
+
+  // Refresh from GitHub + sync state to Notion
   await prTracker.refreshPrsForUser(userId);
 
-  // Get remaining pending PRs
-  const alive = prStore.getPending(userId);
+  // Read pending PRs from Notion (Type='PR Review', Status='Open')
+  const alive = await notion.queryPrReviews(user.notion_database_id, 'open');
 
   if (alive.length === 0) return "Clean slate — no PRs waiting on you. Go grab a coffee.";
 
   const lines = alive.map(pr => {
-    const status = pr.gh_review_status ? ` _(${pr.gh_review_status})_` : '';
-    const draft = pr.gh_state === 'draft' ? ' _(draft)_' : '';
-    return `• <${pr.pr_url}|${pr.title || 'PR'}> — by ${pr.author}, ${formatAge(pr.created_at)}${status}${draft}`;
+    const reviewStatus = pr.reviewStatus ? ` _(${pr.reviewStatus})_` : '';
+    const draft = pr.ghState === 'draft' ? ' _(draft)_' : '';
+    return `• <${pr.url}|${pr.title || 'PR'}> — by ${pr.assignee}, ${formatAge(pr.created)}${reviewStatus}${draft}`;
   });
 
   const header = alive.length === 1

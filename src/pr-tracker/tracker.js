@@ -1,7 +1,6 @@
 const gemini = require('../integrations/gemini');
 const log = require('../utils/logger').child({ module: 'pr' });
 const github = require('../integrations/github');
-const prStore = require('../stores/pr-store');
 const notion = require('../integrations/notion');
 const userStore = require('../stores/user-store');
 
@@ -16,9 +15,6 @@ Respond with ONLY a JSON object:
 Track any message containing a GitHub PR link (github.com/.../pull/...).
 Do NOT track: general discussion without links, "I merged PR #42" (already done).`;
 
-/**
- * Detect PR from a DM message. Non-blocking.
- */
 /**
  * Detect PR from a DM message. Returns detection info if found (for conversation context).
  */
@@ -44,18 +40,22 @@ async function detectFromDm(messageText, userId, senderName) {
 
     const details = await github.getPrDetails(prUrl);
 
-    const added = prStore.upsert(userId, {
-      prUrl,
-      title: details?.title || 'PR',
-      author: details?.author || senderName,
-      detectedFrom: 'dm',
-    });
+    const user = userStore.getById(userId);
+    let isNew = false;
 
-    // Always sync to Notion
-    await syncPrToNotion(userId, prUrl, details?.title || 'PR', details?.author || senderName);
+    if (user?.notion_database_id) {
+      // Write directly to Notion — createPrReview deduplicates by URL
+      const page = await notion.createPrReview(user.notion_database_id, {
+        prUrl,
+        context: details?.title || 'PR',
+        assignee: details?.author || senderName,
+      });
+      // createPrReview returns the existing page when already tracked
+      isNew = !!page?.id;
+    }
 
-    log.info({ prUrl, author: details?.author || senderName, isNew: added }, 'Tracked from DM');
-    return { prUrl, title: details?.title, author: details?.author, isNew: added };
+    log.info({ prUrl, author: details?.author || senderName, isNew }, 'Tracked from DM');
+    return { prUrl, title: details?.title, author: details?.author, isNew };
   } catch (err) {
     log.error({ err }, 'DM detection failed');
     return null;
@@ -64,85 +64,72 @@ async function detectFromDm(messageText, userId, senderName) {
 
 /**
  * Refresh PRs for a user — called on-demand when user asks "what PRs need my review?"
+ * Reads from GitHub as the live source and writes to Notion as the only store.
  */
 async function refreshPrsForUser(userId) {
   const user = userStore.getById(userId);
   if (!user) return;
 
-  // Fetch individually-assigned review requests from GitHub (source of truth)
+  const dbId = user.notion_database_id;
+
+  // Fetch individually-assigned review requests from GitHub (live source of truth)
   const ghPrs = user.github_username
     ? await github.getReviewRequests(user.github_username)
     : [];
   const ghUrls = new Set(ghPrs.map(pr => pr.prUrl));
 
-  // Upsert GitHub PRs + sync to Notion
-  for (const pr of ghPrs) {
-    prStore.upsert(userId, {
-      prUrl: pr.prUrl,
-      title: pr.title,
-      author: pr.author,
-      detectedFrom: 'github_api',
-    });
-    await syncPrToNotion(userId, pr.prUrl, pr.title, pr.author);
-  }
-
-  // Clean up pending PRs that are no longer in the user's individual review queue
-  const pending = prStore.getPending(userId);
-  for (const pr of pending) {
-    if (ghUrls.has(pr.pr_url)) {
-      // Still assigned — fetch details to update review status
-      const details = await github.getPrDetails(pr.pr_url);
-      if (details) prStore.updateGhState(userId, pr.pr_url, details.state, details.reviewStatus);
-    } else {
-      // Not in individual review queue — check if PR is actually merged/closed
-      const details = await github.getPrDetails(pr.pr_url);
-
-      if (details?.merged || details?.state === 'closed') {
-        // PR is genuinely merged/closed — terminal state, remove from both DB and Notion
-        const state = details.merged ? 'merged' : 'closed';
-        prStore.markMergedOrClosed(userId, pr.pr_url, state);
-        await markPrDoneInNotion(userId, pr.pr_url);
-        log.info({ prUrl: pr.pr_url, state }, 'DB + Notion marked Done');
-      } else {
-        // PR is still open — keep tracking regardless of assignment
-        // Mark as 'reviewed' (still shows in pending list) — do NOT touch Notion
-        if (details) prStore.updateGhState(userId, pr.pr_url, details.state, details.reviewStatus || 'pending');
+  // Upsert GitHub PRs into Notion (createPrReview handles dedup)
+  if (dbId) {
+    for (const pr of ghPrs) {
+      try {
+        await notion.createPrReview(dbId, {
+          prUrl: pr.prUrl,
+          context: pr.title,
+          assignee: pr.author,
+        });
+      } catch (err) {
+        log.error({ err, prUrl: pr.prUrl }, 'Failed to upsert PR into Notion');
       }
     }
   }
-}
 
-/**
- * Sync a PR to user's Notion database.
- */
-async function syncPrToNotion(userId, prUrl, title, author) {
-  const user = userStore.getById(userId);
-  if (!user?.notion_database_id) return;
+  // Query current open PRs from Notion
+  const pending = dbId ? await notion.queryPrReviews(dbId, 'open') : [];
 
-  try {
-    await notion.createPrReview(user.notion_database_id, {
-      prUrl,
-      context: title,
-      assignee: author,
-    });
-  } catch (err) {
-    // Might already exist or Notion error — not critical
-    log.error({ err }, 'Notion sync failed');
-  }
-}
+  for (const pr of pending) {
+    if (ghUrls.has(pr.url)) {
+      // Still assigned — fetch details to update GH State / Review Status in Notion
+      if (dbId) {
+        const details = await github.getPrDetails(pr.url);
+        if (details) {
+          await notion.updatePrReview(dbId, pr.url, {
+            ghState: details.state,
+            reviewStatus: details.reviewStatus || 'pending',
+          }).catch(err => log.error({ err }, 'Failed to update Notion PR state'));
+        }
+      }
+    } else {
+      // Not in individual review queue — check if PR is actually merged/closed
+      const details = await github.getPrDetails(pr.url);
 
-/**
- * Mark a PR as Done in Notion when it's merged/closed.
- */
-async function markPrDoneInNotion(userId, prUrl) {
-  const user = userStore.getById(userId);
-  if (!user?.notion_database_id) return;
-
-  try {
-    await notion.markPrDoneByUrl(user.notion_database_id, prUrl);
-    log.info({ prUrl }, 'Notion marked Done');
-  } catch (err) {
-    log.error({ err }, 'Notion status update failed');
+      if (details?.merged || details?.state === 'closed') {
+        // PR is genuinely merged/closed — mark Done in Notion
+        const state = details.merged ? 'merged' : 'closed';
+        if (dbId) {
+          await notion.updatePrReview(dbId, pr.url, {
+            status: 'done',
+            ghState: state,
+          }).catch(err => log.error({ err }, 'Failed to mark PR done'));
+          log.info({ prUrl: pr.url, state }, 'Notion marked Done');
+        }
+      } else if (details && dbId) {
+        // PR is still open — update state without changing Status (keep Open)
+        await notion.updatePrReview(dbId, pr.url, {
+          ghState: details.state,
+          reviewStatus: details.reviewStatus || 'pending',
+        }).catch(err => log.error({ err }, 'Failed to update open PR state'));
+      }
+    }
   }
 }
 

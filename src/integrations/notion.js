@@ -122,6 +122,64 @@ async function markPrDoneByUrl(databaseId, prUrl) {
   }
 }
 
+/**
+ * Query PR Review pages from Notion, filtered by Status.
+ * Returns pages of Type='PR Review' and (optionally) Status='Open'.
+ */
+async function queryPrReviews(databaseId, status = 'open') {
+  const filters = [
+    { property: 'Type', select: { equals: 'PR Review' } },
+  ];
+  if (status && status !== 'all') {
+    filters.push({ property: 'Status', select: { equals: status === 'done' ? 'Done' : 'Open' } });
+  }
+
+  const body = {
+    filter: { and: filters },
+    sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+    page_size: 100,
+  };
+
+  const data = await apiCall(`/databases/${databaseId}/query`, 'POST', body);
+  return data.results.map(page => ({
+    ...parsePage(page),
+    ghState: page.properties['GH State']?.select?.name || null,
+    reviewStatus: page.properties['Review Status']?.select?.name || null,
+  }));
+}
+
+/**
+ * Update fields on an existing PR Review page found by URL.
+ */
+async function updatePrReview(databaseId, prUrl, fields) {
+  try {
+    const data = await apiCall(`/databases/${databaseId}/query`, 'POST', {
+      filter: { property: 'URL', url: { equals: prUrl } },
+      page_size: 1,
+    });
+    if (!data.results?.length) return null;
+
+    const pageId = data.results[0].id;
+    const properties = {};
+
+    if (fields.status) {
+      properties['Status'] = { select: { name: fields.status === 'done' ? 'Done' : 'Open' } };
+    }
+    if (fields.ghState) {
+      properties['GH State'] = { select: { name: fields.ghState } };
+    }
+    if (fields.reviewStatus) {
+      properties['Review Status'] = { select: { name: fields.reviewStatus } };
+    }
+
+    await apiCall(`/pages/${pageId}`, 'PATCH', { properties });
+    return { id: pageId, prUrl };
+  } catch (err) {
+    log.error({ err }, 'Failed to update PR review');
+    return null;
+  }
+}
+
 async function ensureColumns(databaseId) {
   try {
     await fetch(`${BASE_URL}/databases/${databaseId}`, {
@@ -132,10 +190,21 @@ async function ensureColumns(databaseId) {
           'Type': { select: { options: [{ name: 'Task', color: 'blue' }, { name: 'PR Review', color: 'purple' }] } },
           'Assignee': { rich_text: {} },
           'URL': { url: {} },
+          'GH State': { select: { options: [
+            { name: 'open', color: 'green' },
+            { name: 'closed', color: 'red' },
+            { name: 'merged', color: 'purple' },
+            { name: 'draft', color: 'gray' },
+          ] } },
+          'Review Status': { select: { options: [
+            { name: 'pending', color: 'yellow' },
+            { name: 'approved', color: 'green' },
+            { name: 'changes_requested', color: 'red' },
+          ] } },
         },
       }),
     });
   } catch { /* expected: ensureColumns is best-effort, column may already exist */ }
 }
 
-module.exports = { createTask, createPrReview, queryTasks, updateTaskStatus, markPrDoneByUrl, ensureColumns };
+module.exports = { createTask, createPrReview, queryPrReviews, updatePrReview, queryTasks, updateTaskStatus, markPrDoneByUrl, ensureColumns };

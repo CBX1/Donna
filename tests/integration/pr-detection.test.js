@@ -9,12 +9,12 @@ const github = require('../../src/integrations/github');
 const notion = require('../../src/integrations/notion');
 
 const tracker = require('../../src/pr-tracker/tracker');
-const prStore = require('../../src/stores/pr-store');
 const userStore = require('../../src/stores/user-store');
 
 const USER_ID = 'U-PR-001';
 const SENDER_NAME = 'alice';
 const PR_URL = 'https://github.com/org/repo/pull/42';
+const DB_ID = 'db-abc123';
 
 function seedUser(overrides = {}) {
   userStore.getOrCreate(USER_ID, SENDER_NAME, 0);
@@ -35,8 +35,10 @@ beforeEach(() => {
     requestedReviewers: [],
   });
   vi.spyOn(github, 'getReviewRequests').mockResolvedValue([]);
-  vi.spyOn(notion, 'createPrReview').mockResolvedValue({ id: 'notion-page-1' });
+  vi.spyOn(notion, 'createPrReview').mockResolvedValue({ id: 'notion-page-1', url: PR_URL });
   vi.spyOn(notion, 'markPrDoneByUrl').mockResolvedValue(null);
+  vi.spyOn(notion, 'queryPrReviews').mockResolvedValue([]);
+  vi.spyOn(notion, 'updatePrReview').mockResolvedValue({ id: 'notion-page-1' });
 });
 
 afterEach(() => {
@@ -44,22 +46,21 @@ afterEach(() => {
 });
 
 describe('PR Detection Pipeline — detectFromDm', () => {
-  it('DM with a GitHub PR URL detects and stores the PR in the database', async () => {
-    seedUser();
+  it('DM with a GitHub PR URL calls createPrReview in Notion', async () => {
+    seedUser({ notion_database_id: DB_ID });
 
     await tracker.detectFromDm(`Check out this PR: ${PR_URL}`, USER_ID, SENDER_NAME);
 
-    const pending = prStore.getPending(USER_ID);
-    expect(pending).toHaveLength(1);
-    expect(pending[0].pr_url).toBe(PR_URL);
-    expect(pending[0].title).toBe('Fix critical bug');
-    expect(pending[0].author).toBe('alice');
-    expect(pending[0].detected_from).toBe('dm');
-    expect(pending[0].status).toBe('pending');
+    expect(notion.createPrReview).toHaveBeenCalledOnce();
+    expect(notion.createPrReview).toHaveBeenCalledWith(DB_ID, expect.objectContaining({
+      prUrl: PR_URL,
+      context: 'Fix critical bug',
+      assignee: 'alice',
+    }));
   });
 
   it('calls github.getPrDetails with the extracted PR URL', async () => {
-    seedUser();
+    seedUser({ notion_database_id: DB_ID });
 
     await tracker.detectFromDm(`Review needed: ${PR_URL}`, USER_ID, SENDER_NAME);
 
@@ -68,78 +69,80 @@ describe('PR Detection Pipeline — detectFromDm', () => {
   });
 
   it('attempts Notion sync when the user has a notion_database_id configured', async () => {
-    seedUser({ notion_database_id: 'db-abc123' });
+    seedUser({ notion_database_id: DB_ID });
 
     await tracker.detectFromDm(PR_URL, USER_ID, SENDER_NAME);
 
     expect(notion.createPrReview).toHaveBeenCalledOnce();
-    expect(notion.createPrReview).toHaveBeenCalledWith('db-abc123', expect.objectContaining({
+    expect(notion.createPrReview).toHaveBeenCalledWith(DB_ID, expect.objectContaining({
       prUrl: PR_URL,
     }));
   });
 
   it('does NOT attempt Notion sync when user has no notion_database_id', async () => {
-    seedUser();
+    seedUser(); // no notion_database_id
 
     await tracker.detectFromDm(PR_URL, USER_ID, SENDER_NAME);
 
     expect(notion.createPrReview).not.toHaveBeenCalled();
   });
 
-  it('DM without a PR URL stores nothing in the database', async () => {
-    seedUser();
+  it('DM without a PR URL does nothing', async () => {
+    seedUser({ notion_database_id: DB_ID });
 
     await tracker.detectFromDm('Hey, how is the sprint going?', USER_ID, SENDER_NAME);
 
-    expect(prStore.getPending(USER_ID)).toHaveLength(0);
+    expect(notion.createPrReview).not.toHaveBeenCalled();
     expect(github.getPrDetails).not.toHaveBeenCalled();
   });
 
-  it('plain text DM with no GitHub link stores nothing', async () => {
-    seedUser();
+  it('plain text DM with no GitHub link does nothing', async () => {
+    seedUser({ notion_database_id: DB_ID });
 
     await tracker.detectFromDm('Looks good, approved!', USER_ID, SENDER_NAME);
 
-    expect(prStore.getPending(USER_ID)).toHaveLength(0);
+    expect(notion.createPrReview).not.toHaveBeenCalled();
   });
 
   it('strips trailing path segments from PR URL (e.g. /files)', async () => {
-    seedUser();
+    seedUser({ notion_database_id: DB_ID });
     const urlWithFiles = `${PR_URL}/files`;
 
     await tracker.detectFromDm(urlWithFiles, USER_ID, SENDER_NAME);
 
-    const pending = prStore.getPending(USER_ID);
-    expect(pending).toHaveLength(1);
-    expect(pending[0].pr_url).toBe(PR_URL);
+    expect(notion.createPrReview).toHaveBeenCalledOnce();
+    expect(notion.createPrReview).toHaveBeenCalledWith(DB_ID, expect.objectContaining({
+      prUrl: PR_URL,
+    }));
   });
 
   it('uses senderName as author fallback when getPrDetails returns null', async () => {
-    seedUser();
+    seedUser({ notion_database_id: DB_ID });
     github.getPrDetails.mockResolvedValue(null);
 
     await tracker.detectFromDm(PR_URL, USER_ID, SENDER_NAME);
 
-    const pending = prStore.getPending(USER_ID);
-    expect(pending).toHaveLength(1);
-    expect(pending[0].author).toBe(SENDER_NAME);
+    expect(notion.createPrReview).toHaveBeenCalledWith(DB_ID, expect.objectContaining({
+      assignee: SENDER_NAME,
+    }));
   });
 
   it('does not throw when getPrDetails rejects', async () => {
-    seedUser();
+    seedUser({ notion_database_id: DB_ID });
     github.getPrDetails.mockRejectedValue(new Error('GitHub API unavailable'));
 
     // detectFromDm catches internally and should not propagate
     await expect(tracker.detectFromDm(PR_URL, USER_ID, SENDER_NAME)).resolves.toBeNull();
   });
 
-  it('does not duplicate a PR that is already tracked', async () => {
-    seedUser();
+  it('calls createPrReview again for duplicate URL — dedup is handled by Notion', async () => {
+    seedUser({ notion_database_id: DB_ID });
 
     await tracker.detectFromDm(PR_URL, USER_ID, SENDER_NAME);
     await tracker.detectFromDm(PR_URL, USER_ID, SENDER_NAME);
 
-    expect(prStore.getPending(USER_ID)).toHaveLength(1);
+    // Both calls go to Notion — Notion deduplicates internally
+    expect(notion.createPrReview).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -147,68 +150,81 @@ describe('PR Detection Pipeline — refreshPrsForUser', () => {
   const PR_URL_A = 'https://github.com/org/repo/pull/10';
   const PR_URL_B = 'https://github.com/org/repo/pull/20';
 
-  it('stores PRs returned by getReviewRequests', async () => {
-    seedUser({ github_username: 'alice' });
+  it('upserts PRs returned by getReviewRequests into Notion', async () => {
+    seedUser({ github_username: 'alice', notion_database_id: DB_ID });
     github.getReviewRequests.mockResolvedValue([
       { prUrl: PR_URL_A, title: 'PR A', author: 'bob' },
       { prUrl: PR_URL_B, title: 'PR B', author: 'carol' },
     ]);
-    github.getPrDetails.mockResolvedValue({
-      state: 'open', title: 'PR', author: 'bob', merged: false, reviewStatus: 'pending',
-    });
+    notion.queryPrReviews.mockResolvedValue([]);
 
     await tracker.refreshPrsForUser(USER_ID);
 
-    const pending = prStore.getPending(USER_ID);
-    const urls = pending.map(p => p.pr_url);
-    expect(urls).toContain(PR_URL_A);
-    expect(urls).toContain(PR_URL_B);
+    expect(notion.createPrReview).toHaveBeenCalledTimes(2);
+    const calls = notion.createPrReview.mock.calls.map(c => c[1].prUrl);
+    expect(calls).toContain(PR_URL_A);
+    expect(calls).toContain(PR_URL_B);
   });
 
-  it('marks a previously tracked PR as merged when GitHub says it is merged', async () => {
-    seedUser({ github_username: 'alice' });
+  it('marks a pending Notion PR as Done when GitHub says it is merged', async () => {
+    seedUser({ github_username: 'alice', notion_database_id: DB_ID });
 
-    // Seed a pending PR manually
-    prStore.upsert(USER_ID, { prUrl: PR_URL_A, title: 'PR A', author: 'bob', detectedFrom: 'dm' });
-
-    // GitHub review queue is empty — PR was merged and removed from the queue
+    // No review requests — the PR was merged and removed from the queue
     github.getReviewRequests.mockResolvedValue([]);
     github.getPrDetails.mockResolvedValue({
       state: 'merged', title: 'PR A', author: 'bob', merged: true, reviewStatus: 'approved',
     });
+    // Notion reports one open PR
+    notion.queryPrReviews.mockResolvedValue([
+      { id: 'page-1', url: PR_URL_A, title: 'PR A', assignee: 'bob', status: 'Open', created: new Date().toISOString() },
+    ]);
 
     await tracker.refreshPrsForUser(USER_ID);
 
-    const all = prStore.getAll(USER_ID);
-    expect(all).toHaveLength(1);
-    expect(all[0].status).toBe('merged');
+    expect(notion.updatePrReview).toHaveBeenCalledWith(DB_ID, PR_URL_A, expect.objectContaining({
+      status: 'done',
+      ghState: 'merged',
+    }));
   });
 
-  it('cleans up stale PRs that are no longer in the review queue and are closed', async () => {
-    seedUser({ github_username: 'alice' });
+  it('marks a pending Notion PR as Done when GitHub says it is closed', async () => {
+    seedUser({ github_username: 'alice', notion_database_id: DB_ID });
 
-    prStore.upsert(USER_ID, { prUrl: PR_URL_A, title: 'Old PR', author: 'dan', detectedFrom: 'dm' });
-    prStore.upsert(USER_ID, { prUrl: PR_URL_B, title: 'Active PR', author: 'eve', detectedFrom: 'dm' });
+    github.getReviewRequests.mockResolvedValue([]);
+    github.getPrDetails.mockResolvedValue({
+      state: 'closed', title: 'Old PR', author: 'dan', merged: false,
+    });
+    notion.queryPrReviews.mockResolvedValue([
+      { id: 'page-2', url: PR_URL_A, title: 'Old PR', assignee: 'dan', status: 'Open', created: new Date().toISOString() },
+    ]);
 
-    // Only PR_URL_B remains in the review queue
+    await tracker.refreshPrsForUser(USER_ID);
+
+    expect(notion.updatePrReview).toHaveBeenCalledWith(DB_ID, PR_URL_A, expect.objectContaining({
+      status: 'done',
+      ghState: 'closed',
+    }));
+  });
+
+  it('updates GH State on Notion for PRs still in the review queue', async () => {
+    seedUser({ github_username: 'alice', notion_database_id: DB_ID });
+
     github.getReviewRequests.mockResolvedValue([
       { prUrl: PR_URL_B, title: 'Active PR', author: 'eve' },
     ]);
-    github.getPrDetails.mockImplementation(async (url) => {
-      if (url === PR_URL_A) {
-        return { state: 'closed', title: 'Old PR', author: 'dan', merged: false };
-      }
-      return { state: 'open', title: 'Active PR', author: 'eve', merged: false, reviewStatus: 'pending' };
+    github.getPrDetails.mockResolvedValue({
+      state: 'open', title: 'Active PR', author: 'eve', merged: false, reviewStatus: 'pending',
     });
+    notion.queryPrReviews.mockResolvedValue([
+      { id: 'page-3', url: PR_URL_B, title: 'Active PR', assignee: 'eve', status: 'Open', created: new Date().toISOString() },
+    ]);
 
     await tracker.refreshPrsForUser(USER_ID);
 
-    const all = prStore.getAll(USER_ID);
-    const closed = all.find(p => p.pr_url === PR_URL_A);
-    const active = all.find(p => p.pr_url === PR_URL_B);
-
-    expect(closed.status).toBe('closed');
-    expect(active.status).toBe('pending');
+    expect(notion.updatePrReview).toHaveBeenCalledWith(DB_ID, PR_URL_B, expect.objectContaining({
+      ghState: 'open',
+      reviewStatus: 'pending',
+    }));
   });
 
   it('does nothing when user does not exist', async () => {
@@ -217,10 +233,22 @@ describe('PR Detection Pipeline — refreshPrsForUser', () => {
   });
 
   it('skips GitHub API call when user has no github_username', async () => {
-    seedUser(); // no github_username
+    seedUser({ notion_database_id: DB_ID }); // no github_username
 
     await tracker.refreshPrsForUser(USER_ID);
 
     expect(github.getReviewRequests).not.toHaveBeenCalled();
+  });
+
+  it('skips Notion operations when user has no notion_database_id', async () => {
+    seedUser({ github_username: 'alice' }); // no notion_database_id
+    github.getReviewRequests.mockResolvedValue([
+      { prUrl: PR_URL_A, title: 'PR A', author: 'bob' },
+    ]);
+
+    await tracker.refreshPrsForUser(USER_ID);
+
+    expect(notion.createPrReview).not.toHaveBeenCalled();
+    expect(notion.queryPrReviews).not.toHaveBeenCalled();
   });
 });
